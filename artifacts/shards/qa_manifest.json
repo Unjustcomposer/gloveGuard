@@ -1,0 +1,47 @@
+{
+  "total_windows": 31,
+  "clean_windows": 23,
+  "excised_windows": 8,
+  "window_shape": [
+    64,
+    11
+  ],
+  "feature_columns": [
+    "pos_x",
+    "pos_y",
+    "pos_z",
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "force_thumb",
+    "force_index",
+    "force_middle",
+    "force_ring",
+    "force_pinky"
+  ],
+  "clean_shard_indices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    19,
+    20,
+    21,
+    22,
+    27,
+    28,
+    29,
+    30
+  ]
+}
