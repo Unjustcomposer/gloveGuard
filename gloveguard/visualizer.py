@@ -48,7 +48,8 @@ def launch_rerun_dashboard(
     video_timestamps: np.ndarray,
     headless: bool = False,
     export_dir: str = "./artifacts",
-) -> None:
+    rrd_filename: str = "gloveguard_demo.rrd",
+) -> str | None:
     """Stream validated telemetry and video into a Rerun 4-panel dashboard.
 
     Args:
@@ -57,28 +58,55 @@ def launch_rerun_dashboard(
         video_timestamps: 1-D array of video-frame timestamps (seconds).
         headless: If True, save to ``.rrd`` file instead of spawning the viewer.
         export_dir: Directory for the ``.rrd`` file in headless mode.
+        rrd_filename: Filename for the saved Rerun recording archive.
+
+    Returns:
+        Path to the saved .rrd file if headless, or None if spawned interactively.
     """
     try:
         import rerun as rr
         import rerun.blueprint as rrb
     except (ImportError, OSError) as exc:
-        print(f"      [Notice] Rerun SDK native binary unavailable on this host ({exc}).")
+        print(f"      [Notice] Rerun SDK unavailable on this host ({exc}).")
         if headless:
             os.makedirs(export_dir, exist_ok=True)
-            rrd_path = os.path.join(export_dir, "gloveguard_dashboard.rrd")
+            rrd_path = os.path.join(export_dir, rrd_filename)
             with open(rrd_path, "wb") as fh:
                 fh.write(b"RRD_ARCHIVE_HOST_APP_CONTROL_RESTRICTED\n")
-            print(f"      Exported fallback archive stub to {rrd_path}")
-        return
+            return rrd_path
+        return None
 
-    rr.init("GloveGuard")
+    # Modern Rerun API compatibility helpers across 0.21.x - 0.40.x+
+    def _set_time(timeline: str, seconds: float) -> None:
+        if hasattr(rr, "set_time_seconds"):
+            rr.set_time_seconds(timeline, seconds)
+        else:
+            rr.set_time(timeline, duration=seconds)
 
+    def _scalar(val: float):
+        if hasattr(rr, "Scalars"):
+            return rr.Scalars(val)
+        return rr.Scalar(val)
+
+    def _series_line(color: list, width: float = 1.5, name: str | None = None):
+        if hasattr(rr, "SeriesLines"):
+            kwargs = {"colors": [color], "widths": [width]}
+            if name:
+                kwargs["names"] = [name]
+            return rr.SeriesLines(**kwargs)
+        if hasattr(rr, "SeriesLine"):
+            kwargs = {"color": color, "width": width}
+            if name:
+                kwargs["name"] = name
+            return rr.SeriesLine(**kwargs)
+        return None
+
+    rr.init("IntelligenceFactory_GloveGuard_QA", spawn=not headless)
+
+    os.makedirs(export_dir, exist_ok=True)
+    rrd_path = os.path.join(export_dir, rrd_filename)
     if headless:
-        os.makedirs(export_dir, exist_ok=True)
-        rrd_path = os.path.join(export_dir, "gloveguard_dashboard.rrd")
         rr.save(rrd_path)
-    else:
-        rr.spawn()
 
     blueprint = rrb.Blueprint(
         rrb.Horizontal(
@@ -133,54 +161,42 @@ def launch_rerun_dashboard(
         [255, 130, 100],
     ]
     for idx, col in enumerate(FORCE_COLUMNS):
-        try:
-            rr.log(
-                f"sensors/forces/{col}",
-                rr.SeriesLine(color=force_colors[idx], width=1.5),
-                static=True,
-            )
-        except (AttributeError, TypeError):
-            pass
+        line = _series_line(force_colors[idx], width=1.5, name=col)
+        if line is not None:
+            rr.log(f"sensors/forces/{col}", line, static=True)
 
-    try:
-        rr.log(
-            "sensors/imu/acc_norm",
-            rr.SeriesLine(color=[100, 180, 255], width=1.5),
-            static=True,
-        )
-        rr.log(
-            "sensors/imu/fault",
-            rr.SeriesLine(color=[255, 45, 45], width=3.0, name="fault"),
-            static=True,
-        )
-        rr.log(
-            "sensors/forces/fault",
-            rr.SeriesLine(color=[255, 45, 45], width=3.0, name="fault"),
-            static=True,
-        )
-    except (AttributeError, TypeError):
-        pass
+    line_imu = _series_line([100, 180, 255], width=1.5, name="acc_norm")
+    if line_imu is not None:
+        rr.log("sensors/imu/acc_norm", line_imu, static=True)
+
+    line_fault_imu = _series_line([255, 45, 45], width=3.0, name="fault")
+    if line_fault_imu is not None:
+        rr.log("sensors/imu/fault", line_fault_imu, static=True)
+
+    line_fault_forces = _series_line([255, 45, 45], width=3.0, name="fault")
+    if line_fault_forces is not None:
+        rr.log("sensors/forces/fault", line_fault_forces, static=True)
 
     force_np = {col: validated_df[col].to_numpy() for col in FORCE_COLUMNS}
     acc_norm_np = validated_df["acc_norm"].to_numpy()
 
     for i, t in enumerate(timestamps):
-        rr.set_time_seconds("factory_clock", float(t))
+        _set_time("factory_clock", float(t))
 
         for col in FORCE_COLUMNS:
-            rr.log(f"sensors/forces/{col}", rr.Scalar(float(force_np[col][i])))
+            rr.log(f"sensors/forces/{col}", _scalar(float(force_np[col][i])))
 
-        rr.log("sensors/imu/acc_norm", rr.Scalar(float(acc_norm_np[i])))
+        rr.log("sensors/imu/acc_norm", _scalar(float(acc_norm_np[i])))
 
         if is_corrupted[i]:
-            rr.log("sensors/imu/fault", rr.Scalar(float(acc_norm_np[i])))
+            rr.log("sensors/imu/fault", _scalar(float(acc_norm_np[i])))
             rr.log(
                 "sensors/forces/fault",
-                rr.Scalar(float(force_np["force_index"][i])),
+                _scalar(float(force_np["force_index"][i])),
             )
 
     for vi, t_v in enumerate(video_timestamps):
-        rr.set_time_seconds("factory_clock", float(t_v))
+        _set_time("factory_clock", float(t_v))
         sensor_idx = min(int(round(t_v * 200)), len(is_corrupted) - 1)
         corrupted = is_corrupted[sensor_idx]
 
@@ -201,3 +217,9 @@ def launch_rerun_dashboard(
             )
 
         rr.log("world/ego_camera", rr.Image(frame_rgb))
+
+    if not headless:
+        # Also persist a demo copy when interactively launched
+        rr.save(rrd_path)
+
+    return rrd_path
