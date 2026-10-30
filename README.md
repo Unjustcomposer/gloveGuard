@@ -15,6 +15,10 @@
   Detects ADC flatlines, kinematic impact spikes, and cross-modal camera clock freezes in <b>&lt;10ms</b> with zero-copy hard excision into PyTorch <code>IterableDataset</code> shards.
 </p>
 
+<p align="center">
+  <img src="assets/demo_gif.gif" alt="GloveGuard Rerun.io 4-Panel Multimodal QA Dashboard" width="100%" />
+</p>
+
 </div>
 
 ---
@@ -85,6 +89,8 @@ flowchart TD
 
 ```text
 gloveGuard/
+├── assets/
+│   └── demo_gif.gif          # 4-panel multimodal Rerun visualizer demo recording
 ├── gloveguard/
 │   ├── __init__.py           # Package exports (generate_factory_episode, run_quality_gate, etc.)
 │   ├── simulator.py          # 30Hz video + 200Hz IMU/Glove generator with 3 deterministic hardware faults
